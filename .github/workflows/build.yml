@@ -18,18 +18,19 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Generate Clean Mod Project
         run: |
           set -e
           mkdir -p mod-project/src/main/java/com/example/client
           mkdir -p mod-project/src/main/resources
 
-          # Create settings.gradle
           cat << 'EOF' > mod-project/settings.gradle
           rootProject.name = 'vector-mod'
           EOF
 
-          # Create gradle.properties
           cat << 'EOF' > mod-project/gradle.properties
           org.gradle.jvmargs=-Xmx2G
           org.gradle.parallel=true
@@ -41,7 +42,6 @@ jobs:
           archives_base_name=vector-mod
           EOF
 
-          # Create build.gradle
           cat << 'EOF' > mod-project/build.gradle
           plugins {
               id 'fabric-loom' version '1.7-SNAPSHOT'
@@ -73,7 +73,6 @@ jobs:
           }
           EOF
 
-          # Create fabric.mod.json
           cat << 'EOF' > mod-project/src/main/resources/fabric.mod.json
           {
             "schemaVersion": 1,
@@ -98,7 +97,6 @@ jobs:
           }
           EOF
 
-          # Create ClientModInitializer Java code
           cat << 'EOF' > mod-project/src/main/java/com/example/client/VectorClient.java
           package com.example.client;
 
@@ -133,10 +131,10 @@ jobs:
           }
           EOF
 
-      - name: Build with Gradle
+      - name: Compile Mod
         run: |
           cd mod-project
-          ./gradlew wrapper
+          gradle wrapper --gradle-version 8.8
           chmod +x ./gradlew
           ./gradlew build --no-daemon
 
