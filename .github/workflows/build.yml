@@ -1,12 +1,8 @@
-
-name: Build Vector Fabric Mod
+name: Build Fabric Mod
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - "Vector-Modules-Source.zip"
-      - ".github/workflows/build.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,46 +18,50 @@ jobs:
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "21"
+          distribution: 'temurin'
+          java-version: '21'
 
-      - name: Extract Vector source
+      - name: Extract ZIP source
         run: |
           set -e
-          mkdir -p project
-          unzip -o Vector-Modules-Source.zip -d project
-          echo "Files extracted:"
-          find project -maxdepth 4 -type f | head -100
+          mkdir -p project_extracted
+          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found in root of repository."
+            exit 1
+          fi
+          echo "Found ZIP file: $ZIP_FILE"
+          unzip -o "$ZIP_FILE" -d project_extracted
 
-      - name: Find Gradle project
+      - name: Locate Gradle Root & Grant Permissions
         run: |
           set -e
-          BUILD_FILE=$(find project -name build.gradle -o -name build.gradle.kts | head -1)
+          BUILD_FILE=$(find project_extracted -name "build.gradle" -o -name "build.gradle.kts" | head -n 1)
           if [ -z "$BUILD_FILE" ]; then
-            echo "ERROR: No Gradle build file found in the ZIP."
+            echo "ERROR: Could not find build.gradle inside the zip file."
             exit 1
           fi
           PROJECT_DIR=$(dirname "$BUILD_FILE")
+          echo "Found Gradle project in: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Found project: $PROJECT_DIR"
+          
+          # Ensure gradlew exists or generate wrapper if missing
+          cd "$PROJECT_DIR"
+          if [ ! -f ./gradlew ]; then
+            echo "gradlew wrapper missing, generating Gradle wrapper..."
+            gradle wrapper
+          fi
+          chmod +x ./gradlew
 
-      - name: Build mod
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Build Mod with Gradle
         run: |
           set -e
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
-            ./gradlew --no-daemon build
-          else
-            echo "ERROR: Gradle wrapper (gradlew) is missing."
-            echo "The project ZIP needs a Gradle wrapper or another setup step."
-            exit 1
-          fi
+          cd "${{ env.PROJECT_DIR }}"
+          ./gradlew build --no-daemon
 
-      - name: Upload mod JAR
+      - name: Upload Mod JAR
         uses: actions/upload-artifact@v4
         with:
-          name: Vector-Minecraft-1.21.1
-          path: |
-            ${{ env.PROJECT_DIR }}/build/libs/*.jar
+          name: Mod-JAR-Output
+          path: ${{ env.PROJECT_DIR }}/build/libs/*.jar
           if-no-files-found: error
