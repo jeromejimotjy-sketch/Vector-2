@@ -1,148 +1,42 @@
-name: Generate and Build Fabric Mod
+
+name: Build Vector Fabric Mod
 
 on:
-  push:
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    paths:
+      - "Vector-Prestige-Style-Source.zip"
+      - ".github/workflows/build.yml"
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: temurin
+          java-version: "21"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          cache-disabled: true
+          gradle-version: "8.10.2"
 
-      - name: Generate Clean Mod Project
+      - name: Extract project
         run: |
-          set -e
-          mkdir -p mod-project/src/main/java/com/example/client
-          mkdir -p mod-project/src/main/resources
+          unzip -q Vector-Prestige-Style-Source.zip -d project
 
-          cat << 'EOF' > mod-project/settings.gradle
-          rootProject.name = 'vector-mod'
-          EOF
+      - name: Build mod
+        working-directory: project/Vector-Fabric-1.21.1
+        run: gradle build --no-daemon
 
-          cat << 'EOF' > mod-project/gradle.properties
-          org.gradle.jvmargs=-Xmx2G
-          org.gradle.parallel=true
-          minecraft_version=1.21.1
-          yarn_mappings=1.21.1+build.3
-          loader_version=0.16.0
-          mod_version=1.0.0
-          maven_group=com.example
-          archives_base_name=vector-mod
-          EOF
-
-          cat << 'EOF' > mod-project/build.gradle
-          plugins {
-              id 'fabric-loom' version '1.7-SNAPSHOT'
-              id 'maven-publish'
-          }
-          version = project.mod_version
-          group = project.maven_group
-          repositories {
-              mavenCentral()
-          }
-          dependencies {
-              minecraft "com.mojang:minecraft:${project.minecraft_version}"
-              mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-              modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-          }
-          processResources {
-              inputs.property "version", project.version
-              filesMatching("fabric.mod.json") {
-                  expand "version": project.version
-              }
-          }
-          tasks.withType(JavaCompile).configureEach {
-              it.options.release = 21
-          }
-          java {
-              withSourcesJar()
-              sourceCompatibility = JavaVersion.VERSION_21
-              targetCompatibility = JavaVersion.VERSION_21
-          }
-          EOF
-
-          cat << 'EOF' > mod-project/src/main/resources/fabric.mod.json
-          {
-            "schemaVersion": 1,
-            "id": "vector-mod",
-            "version": "${version}",
-            "name": "Vector Mod",
-            "description": "A custom client mod.",
-            "authors": ["User"],
-            "contact": {},
-            "license": "MIT",
-            "environment": "client",
-            "entrypoints": {
-              "client": [
-                "com.example.client.VectorClient"
-              ]
-            },
-            "depends": {
-              "fabricloader": ">=0.16.0",
-              "minecraft": "~1.21.1",
-              "java": ">=21"
-            }
-          }
-          EOF
-
-          cat << 'EOF' > mod-project/src/main/java/com/example/client/VectorClient.java
-          package com.example.client;
-
-          import net.fabricmc.api.ClientModInitializer;
-          import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-          import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-          import net.minecraft.client.option.KeyBinding;
-          import net.minecraft.client.util.InputUtil;
-          import org.lwjgl.glfw.GLFW;
-          import net.minecraft.text.Text;
-
-          public class VectorClient implements ClientModInitializer {
-              private static KeyBinding openGuiKey;
-
-              @Override
-              public void onInitializeClient() {
-                  openGuiKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                      "key.vector.open",
-                      InputUtil.Type.KEYSYM,
-                      GLFW.GLFW_KEY_RIGHT_SHIFT,
-                      "category.vector"
-                  ));
-
-                  ClientTickEvents.END_CLIENT_TICK.register(client -> {
-                      while (openGuiKey.wasPressed()) {
-                          if (client.player != null) {
-                              client.player.sendMessage(Text.literal("§dVector Mod Loaded Successfully!"), false);
-                          }
-                      }
-                  });
-              }
-          }
-          EOF
-
-      - name: Compile Mod
-        run: |
-          cd mod-project
-          gradle wrapper --gradle-version 8.8
-          chmod +x ./gradlew
-          ./gradlew build --no-daemon
-
-      - name: Upload Mod JAR
+      - name: Upload JAR files
         uses: actions/upload-artifact@v4
         with:
-          name: Working-Vector-JAR
-          path: mod-project/build/libs/*.jar
-          if-no-files-found: error
+          name: Vector-Minecraft-1.21.1
+          path: project/Vector-Fabric-1.21.1/build/libs/*.jar
