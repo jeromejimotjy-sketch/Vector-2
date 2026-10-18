@@ -1,4 +1,4 @@
-name: Build Fabric Mod
+name: Generate and Build Fabric Mod
 
 on:
   push:
@@ -12,56 +12,137 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Extract ZIP source
+      - name: Generate Clean Mod Project
         run: |
           set -e
-          mkdir -p project_extracted
-          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found in root of repository."
-            exit 1
-          fi
-          echo "Found ZIP file: $ZIP_FILE"
-          unzip -o "$ZIP_FILE" -d project_extracted
+          mkdir -p mod-project/src/main/java/com/example/client
+          mkdir -p mod-project/src/main/resources
 
-      - name: Locate Gradle Root & Grant Permissions
+          # Create settings.gradle
+          cat << 'EOF' > mod-project/settings.gradle
+          rootProject.name = 'vector-mod'
+          EOF
+
+          # Create gradle.properties
+          cat << 'EOF' > mod-project/gradle.properties
+          org.gradle.jvmargs=-Xmx2G
+          org.gradle.parallel=true
+          minecraft_version=1.21.1
+          yarn_mappings=1.21.1+build.3
+          loader_version=0.16.0
+          mod_version=1.0.0
+          maven_group=com.example
+          archives_base_name=vector-mod
+          EOF
+
+          # Create build.gradle
+          cat << 'EOF' > mod-project/build.gradle
+          plugins {
+              id 'fabric-loom' version '1.7-SNAPSHOT'
+              id 'maven-publish'
+          }
+          version = project.mod_version
+          group = project.maven_group
+          repositories {
+              mavenCentral()
+          }
+          dependencies {
+              minecraft "com.mojang:minecraft:${project.minecraft_version}"
+              mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+              modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+          }
+          processResources {
+              inputs.property "version", project.version
+              filesMatching("fabric.mod.json") {
+                  expand "version": project.version
+              }
+          }
+          tasks.withType(JavaCompile).configureEach {
+              it.options.release = 21
+          }
+          java {
+              withSourcesJar()
+              sourceCompatibility = JavaVersion.VERSION_21
+              targetCompatibility = JavaVersion.VERSION_21
+          }
+          EOF
+
+          # Create fabric.mod.json
+          cat << 'EOF' > mod-project/src/main/resources/fabric.mod.json
+          {
+            "schemaVersion": 1,
+            "id": "vector-mod",
+            "version": "${version}",
+            "name": "Vector Mod",
+            "description": "A custom client mod.",
+            "authors": ["User"],
+            "contact": {},
+            "license": "MIT",
+            "environment": "client",
+            "entrypoints": {
+              "client": [
+                "com.example.client.VectorClient"
+              ]
+            },
+            "depends": {
+              "fabricloader": ">=0.16.0",
+              "minecraft": "~1.21.1",
+              "java": ">=21"
+            }
+          }
+          EOF
+
+          # Create ClientModInitializer Java code
+          cat << 'EOF' > mod-project/src/main/java/com/example/client/VectorClient.java
+          package com.example.client;
+
+          import net.fabricmc.api.ClientModInitializer;
+          import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+          import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+          import net.minecraft.client.option.KeyBinding;
+          import net.minecraft.client.util.InputUtil;
+          import org.lwjgl.glfw.GLFW;
+          import net.minecraft.text.Text;
+
+          public class VectorClient implements ClientModInitializer {
+              private static KeyBinding openGuiKey;
+
+              @Override
+              public void onInitializeClient() {
+                  openGuiKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                      "key.vector.open",
+                      InputUtil.Type.KEYSYM,
+                      GLFW.GLFW_KEY_RIGHT_SHIFT,
+                      "category.vector"
+                  ));
+
+                  ClientTickEvents.END_CLIENT_TICK.register(client -> {
+                      while (openGuiKey.wasPressed()) {
+                          if (client.player != null) {
+                              client.player.sendMessage(Text.literal("§dVector Mod Loaded Successfully!"), false);
+                          }
+                      }
+                  });
+              }
+          }
+          EOF
+
+      - name: Build with Gradle
         run: |
-          set -e
-          BUILD_FILE=$(find project_extracted -name "build.gradle" -o -name "build.gradle.kts" | head -n 1)
-          if [ -z "$BUILD_FILE" ]; then
-            echo "ERROR: Could not find build.gradle inside the zip file."
-            exit 1
-          fi
-          PROJECT_DIR=$(dirname "$BUILD_FILE")
-          echo "Found Gradle project in: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          
-          # Ensure gradlew exists or generate wrapper if missing
-          cd "$PROJECT_DIR"
-          if [ ! -f ./gradlew ]; then
-            echo "gradlew wrapper missing, generating Gradle wrapper..."
-            gradle wrapper
-          fi
+          cd mod-project
+          ./gradlew wrapper
           chmod +x ./gradlew
-
-      - name: Build Mod with Gradle
-        run: |
-          set -e
-          cd "${{ env.PROJECT_DIR }}"
           ./gradlew build --no-daemon
 
       - name: Upload Mod JAR
         uses: actions/upload-artifact@v4
         with:
-          name: Mod-JAR-Output
-          path: ${{ env.PROJECT_DIR }}/build/libs/*.jar
+          name: Working-Vector-JAR
+          path: mod-project/build/libs/*.jar
           if-no-files-found: error
